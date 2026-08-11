@@ -1,0 +1,6 @@
+kivy==2.3.0
+plyer
+ebooklib
+beautifulsoup4
+pdfminer.six
+lxml

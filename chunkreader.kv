@@ -1,0 +1,233 @@
+#:import THEMES storage.THEMES
+
+<LibraryScreen>:
+    name: "library"
+    BoxLayout:
+        orientation: "vertical"
+        canvas.before:
+            Color:
+                rgba: app.bg_color
+            Rectangle:
+                pos: self.pos
+                size: self.size
+
+        BoxLayout:
+            size_hint_y: None
+            height: 70
+            padding: 10
+            spacing: 10
+            Label:
+                text: "ChunkReader"
+                font_name: app.font_name_value
+                font_size: app.font_size_value * 0.6
+                color: app.fg_color
+                bold: True
+            Button:
+                text: "+ Add Book"
+                size_hint_x: None
+                width: 180
+                font_size: app.font_size_value * 0.4
+                on_release: app.prompt_add_book()
+            Button:
+                text: "Settings"
+                size_hint_x: None
+                width: 140
+                font_size: app.font_size_value * 0.4
+                on_release: app.go_to_settings()
+
+        ScrollView:
+            BoxLayout:
+                id: book_list
+                orientation: "vertical"
+                size_hint_y: None
+                height: self.minimum_height
+                spacing: 6
+                padding: 10
+
+
+<ReaderScreen>:
+    name: "reader"
+    FloatLayout:
+        canvas.before:
+            Color:
+                rgba: app.bg_color
+            Rectangle:
+                pos: self.pos
+                size: self.size
+
+        BoxLayout:
+            orientation: "vertical"
+            size: root.width, root.height
+            pos: root.pos
+
+            BoxLayout:
+                size_hint_y: None
+                height: 60
+                padding: 10
+                spacing: 10
+                Button:
+                    text: "< Library"
+                    size_hint_x: None
+                    width: 140
+                    font_size: app.font_size_value * 0.35
+                    on_release: app.go_to_library()
+                Label:
+                    id: book_title_label
+                    font_name: app.font_name_value
+                    font_size: app.font_size_value * 0.4
+                    color: app.fg_color
+                Label:
+                    id: progress_label
+                    font_size: app.font_size_value * 0.35
+                    color: app.fg_color
+                    size_hint_x: None
+                    width: 100
+                Button:
+                    text: "Settings"
+                    size_hint_x: None
+                    width: 120
+                    font_size: app.font_size_value * 0.35
+                    on_release: app.go_to_settings()
+
+            # The chunk text fills the whole reading area. Two invisible
+            # tap zones sit on top of it: left 30% = previous, right 70%
+            # = next (mirrors the "advance the textbox" feel of VN UIs,
+            # while keeping the bigger zone for the common "go forward"
+            # action).
+            FloatLayout:
+                id: reader_area
+
+                Label:
+                    id: chunk_label
+                    text: ""
+                    markup: True
+                    font_name: app.font_name_value
+                    font_size: app.font_size_value
+                    line_height: app.line_spacing_value
+                    color: app.fg_color
+                    halign: "center"
+                    valign: "middle"
+                    text_size: self.width * 0.9, self.height * 0.9
+                    size: reader_area.size
+                    pos: reader_area.pos
+
+                Button:
+                    background_normal: ""
+                    background_color: 0, 0, 0, 0
+                    on_release: app.prev_chunk()
+                    size_hint: 0.3, 1
+                    pos_hint: {"x": 0, "y": 0}
+
+                Button:
+                    background_normal: ""
+                    background_color: 0, 0, 0, 0
+                    on_release: app.next_chunk()
+                    size_hint: 0.7, 1
+                    pos_hint: {"x": 0.3, "y": 0}
+
+
+<SettingsScreen>:
+    name: "settings"
+    BoxLayout:
+        orientation: "vertical"
+        canvas.before:
+            Color:
+                rgba: app.bg_color
+            Rectangle:
+                pos: self.pos
+                size: self.size
+        padding: 20
+        spacing: 16
+
+        BoxLayout:
+            size_hint_y: None
+            height: 60
+            Button:
+                text: "< Back"
+                size_hint_x: None
+                width: 140
+                on_release: app.go_back_from_settings()
+            Label:
+                text: "Settings"
+                font_name: app.font_name_value
+                font_size: app.font_size_value * 0.55
+                color: app.fg_color
+                bold: True
+
+        Label:
+            text: "Sentences per chunk: " + str(int(sentence_slider.value))
+            color: app.fg_color
+            font_size: app.font_size_value * 0.4
+            size_hint_y: None
+            height: 40
+        Slider:
+            id: sentence_slider
+            min: 1
+            max: 5
+            step: 1
+            value: app.sentences_per_chunk
+            size_hint_y: None
+            height: 40
+            on_value: app.set_sentences_per_chunk(self.value)
+
+        Label:
+            text: "Font size"
+            color: app.fg_color
+            font_size: app.font_size_value * 0.4
+            size_hint_y: None
+            height: 40
+        Slider:
+            id: font_slider
+            min: 20
+            max: 56
+            step: 2
+            value: app.font_size_value
+            size_hint_y: None
+            height: 40
+            on_value: app.set_font_size(self.value)
+
+        Label:
+            text: "Line spacing"
+            color: app.fg_color
+            font_size: app.font_size_value * 0.4
+            size_hint_y: None
+            height: 40
+        Slider:
+            id: spacing_slider
+            min: 1.0
+            max: 2.5
+            step: 0.1
+            value: app.line_spacing_value
+            size_hint_y: None
+            height: 40
+            on_value: app.set_line_spacing(self.value)
+
+        Label:
+            text: "Color theme"
+            color: app.fg_color
+            font_size: app.font_size_value * 0.4
+            size_hint_y: None
+            height: 40
+
+        GridLayout:
+            cols: 2
+            spacing: 8
+            size_hint_y: None
+            height: 140
+            Button:
+                text: "Black & White"
+                on_release: app.set_theme("classic_bw")
+            Button:
+                text: "Cream on Black"
+                on_release: app.set_theme("cream_black")
+            Button:
+                text: "Navy & Off-white"
+                on_release: app.set_theme("navy_offwhite")
+            Button:
+                text: "Black & Yellow"
+                on_release: app.set_theme("high_contrast_yellow")
+            Button:
+                text: "Soft Sepia"
+                on_release: app.set_theme("sepia")
+
+        Widget:

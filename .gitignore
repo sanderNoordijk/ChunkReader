@@ -1,0 +1,11 @@
+.buildozer/
+bin/
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.apk
+
+# Don't commit real user books/settings if testing locally with
+# an ANDROID_ARGUMENT-less run that writes to a local user_data_dir.
+.local_userdata/

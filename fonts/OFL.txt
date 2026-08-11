@@ -1,0 +1,7 @@
+OpenDyslexic is licensed under the SIL Open Font License, Version 1.1.
+Full license text: https://scripts.sil.org/OFL
+Font source: https://github.com/antijingoist/opendyslexic
+
+This license permits bundling and redistribution of the font with
+this application, provided the font is not sold by itself and the
+license text accompanies it.
