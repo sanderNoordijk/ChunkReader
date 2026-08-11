@@ -19,7 +19,7 @@ icon.filename = %(source.dir)s/assets/icon.png
 android.permissions = READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE
 
 android.api = 34
-android.minapi = 23
+android.minapi = 24
 android.ndk = 25b
 android.archs = arm64-v8a, armeabi-v7a
 android.allow_backup = True
