@@ -7,7 +7,11 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # Pinned (not ubuntu-latest) so this doesn't silently break again the
+    # next time GitHub rolls the "latest" runner forward to a newer Ubuntu
+    # release that buildozer/python-for-android hasn't caught up with yet.
+    runs-on: ubuntu-22.04
+
     steps:
       - uses: actions/checkout@v4
 
@@ -16,15 +20,34 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Build APK with Buildozer
-        uses: ArtemSBulgakov/buildozer-action@v1
-        id: buildozer
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            git zip unzip openjdk-17-jdk \
+            autoconf libtool pkg-config \
+            zlib1g-dev libncurses-dev cmake \
+            libffi-dev libssl-dev automake build-essential
+
+      - name: Install buildozer
+        run: |
+          pip install --upgrade pip
+          pip install "Cython<3" buildozer
+
+      - name: Cache buildozer global + .buildozer
+        uses: actions/cache@v4
         with:
-          command: buildozer android debug
-          buildozer_version: stable
+          path: |
+            ~/.buildozer
+            .buildozer
+          key: buildozer-${{ hashFiles('buildozer.spec') }}
+
+      - name: Build APK with Buildozer
+        run: |
+          yes | buildozer -v android debug
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: chunkreader-apk
-          path: ${{ steps.buildozer.outputs.filename }}
+          path: bin/*.apk
