@@ -8,7 +8,7 @@ source.include_exts = py,png,jpg,kv,atlas,otf,ttf,json,txt
 
 version = 0.1.0
 
-requirements = python3,kivy==2.3.0,plyer,ebooklib,beautifulsoup4,pdfminer.six
+requirements = python3==3.11.9,hostpython3==3.11.9,kivy==2.3.0,plyer,ebooklib,beautifulsoup4,pdfminer.six
 
 # Portrait only - matches the "textbox" reading metaphor
 orientation = portrait
