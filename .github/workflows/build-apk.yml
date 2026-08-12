@@ -7,9 +7,6 @@ on:
 
 jobs:
   build:
-    # Pinned (not ubuntu-latest) so this doesn't silently break again the
-    # next time GitHub rolls the "latest" runner forward to a newer Ubuntu
-    # release that buildozer/python-for-android hasn't caught up with yet.
     runs-on: ubuntu-22.04
 
     steps:
@@ -24,7 +21,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            git zip unzip openjdk-17-jdk \
+            git zip unzip \
             autoconf libtool pkg-config \
             zlib1g-dev libncurses-dev cmake \
             libffi-dev libssl-dev automake build-essential
@@ -44,11 +41,7 @@ jobs:
 
       - name: Build APK with Buildozer
         env:
-          # Constrains pip's own self-upgrade (triggered internally by
-          # python-for-android) to a known-stable release. Without this,
-          # "pip install -U pip" grabs whatever is newest on PyPI, and a
-          # recent pip build has a packaging regression (ImportError on
-          # 'open_rich_spinner') that breaks the build deterministically.
+          JAVA_HOME: ${{ env.JAVA_HOME_17_X64 }}
           PIP_CONSTRAINT: ${{ github.workspace }}/pip-constraint.txt
         run: |
           yes | buildozer -v android debug
