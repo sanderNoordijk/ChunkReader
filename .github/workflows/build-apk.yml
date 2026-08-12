@@ -41,9 +41,10 @@ jobs:
 
       - name: Build APK with Buildozer
         env:
-          JAVA_HOME: ${{ env.JAVA_HOME_17_X64 }}
           PIP_CONSTRAINT: ${{ github.workspace }}/pip-constraint.txt
         run: |
+          export JAVA_HOME="$JAVA_HOME_17_X64"
+          echo "Using JAVA_HOME=$JAVA_HOME"
           yes | buildozer -v android debug
 
       - name: Upload APK artifact
