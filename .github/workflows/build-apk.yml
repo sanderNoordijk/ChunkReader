@@ -43,6 +43,13 @@ jobs:
           key: buildozer-${{ hashFiles('buildozer.spec') }}
 
       - name: Build APK with Buildozer
+        env:
+          # Constrains pip's own self-upgrade (triggered internally by
+          # python-for-android) to a known-stable release. Without this,
+          # "pip install -U pip" grabs whatever is newest on PyPI, and a
+          # recent pip build has a packaging regression (ImportError on
+          # 'open_rich_spinner') that breaks the build deterministically.
+          PIP_CONSTRAINT: ${{ github.workspace }}/pip-constraint.txt
         run: |
           yes | buildozer -v android debug
 
