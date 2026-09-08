@@ -8,13 +8,18 @@ source.include_exts = py,png,jpg,kv,atlas,otf,ttf,json,txt
 
 version = 0.1.0
 
-# Pinned to 4.12.3: BeautifulSoup 4.13+ added a hard dependency on
-# typing_extensions (bs4/_typing.py), and python-for-android's packaging
-# step doesn't reliably bundle that single-file module into the APK,
-# causing "ModuleNotFoundError: No module named 'typing_extensions'" at
-# launch. 4.12.x has no such dependency, so this sidesteps the problem
-# entirely rather than fighting the packaging step.
-requirements = python3==3.11.9,hostpython3==3.11.9,kivy==2.3.0,plyer,ebooklib,beautifulsoup4==4.12.3,pdfminer.six
+# Deliberately minimal: no ebooklib, no beautifulsoup4, no pdfminer.six.
+# ebooklib requires lxml (a compiled C extension - fragile to
+# cross-compile via python-for-android's non-recipe pip install path,
+# and the direct cause of an earlier build failure). pdfminer.six
+# requires charset-normalizer AND cryptography (the latter also a
+# compiled extension). beautifulsoup4 4.13+ requires typing_extensions,
+# which p4a's packaging step didn't reliably bundle. reader_engine.py
+# was rewritten to use only the Python standard library (zipfile +
+# xml.etree.ElementTree + html.parser) for EPUB parsing, and pypdf
+# (zero required third-party dependencies for plain text extraction)
+# for PDF - this requirements line reflects that.
+requirements = python3==3.11.9,hostpython3==3.11.9,kivy==2.3.0,plyer,pypdf
 
 # "all" rather than "portrait": forcing portrait caused an immediate
 # forced rotation on tablets that launch in landscape, which triggered a
