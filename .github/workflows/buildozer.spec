@@ -6,7 +6,7 @@ package.domain = org.sandernoordijk
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,otf,ttf,json,txt
 
-version = 0.1.0
+version = 0.1.1
 
 # Deliberately minimal: no ebooklib, no beautifulsoup4, no pdfminer.six.
 # ebooklib requires lxml (a compiled C extension - fragile to
@@ -21,11 +21,14 @@ version = 0.1.0
 # for PDF - this requirements line reflects that.
 requirements = python3==3.11.9,hostpython3==3.11.9,kivy==2.3.0,plyer,pypdf
 
-# "all" rather than "portrait": forcing portrait caused an immediate
-# forced rotation on tablets that launch in landscape, which triggered a
-# native SIGABRT crash (HWUI render-thread mutex teardown race) on launch.
-# The chunk-reader UI still centers/scales fine in landscape.
-orientation = all
+# "all" was NOT a real buildozer value (docs only list portrait,
+# landscape, portrait-reverse, landscape-reverse) - it silently fell
+# through to a fallback that still force-set a specific orientation
+# (userPortrait) at launch, which is what caused the forced-rotation
+# SIGABRT crash on both the OnePlus Pad and the Pixel. Listing BOTH
+# valid orientations here is the actually-documented way to avoid
+# locking to one orientation at launch.
+orientation = portrait,landscape
 fullscreen = 0
 
 icon.filename = %(source.dir)s/assets/icon.png
