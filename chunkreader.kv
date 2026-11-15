@@ -1,233 +1,366 @@
-#:import THEMES storage.THEMES
+#:kivy 2.0
+#:import dp kivy.metrics.dp
+#:import sp kivy.metrics.sp
+
+# All sizes use dp/sp so the app looks the same on every screen density
+# and follows the system font-size setting.
+
+<FlatButton@Button>:
+    background_normal: ""
+    background_down: ""
+    background_color: (1, 1, 1, 0.28) if self.state == "down" else (1, 1, 1, 0.14)
+    color: app.fg_color
+    font_name: app.font_name_value
+    font_size: sp(15)
+
+<Background@BoxLayout>:
+    canvas.before:
+        Color:
+            rgba: app.bg_color
+        Rectangle:
+            pos: self.pos
+            size: self.size
+
+<SettingLabel@Label>:
+    color: app.fg_color
+    font_name: app.font_name_value
+    font_size: sp(16)
+    size_hint_y: None
+    height: dp(36)
+    text_size: self.size
+    halign: "left"
+    valign: "bottom"
+
+<BookRow>:
+    size_hint_y: None
+    height: dp(88)
+    spacing: dp(8)
+    FlatButton:
+        text: root.title
+        font_size: sp(17)
+        halign: "left"
+        valign: "middle"
+        text_size: self.width - dp(28), self.height
+        max_lines: 2
+        on_release: app.open_book_by_id(root.book_id)
+    Label:
+        text: root.progress_text
+        color: app.accent_color
+        font_name: app.font_name_value
+        font_size: sp(15)
+        size_hint_x: None
+        width: dp(58)
+    FlatButton:
+        text: "X"
+        size_hint_x: None
+        width: dp(52)
+        on_release: app.confirm_remove_book(root.book_id)
+
+<ThemeButton>:
+    background_normal: ""
+    background_down: ""
+    font_name: app.font_name_value
+    font_size: sp(16)
+    bold: self.selected
+    size_hint_y: None
+    height: dp(54)
+    canvas.after:
+        Color:
+            rgba: self.color[0], self.color[1], self.color[2], (1 if self.selected else 0.3)
+        Line:
+            rectangle: self.x + dp(1), self.y + dp(1), self.width - dp(2), self.height - dp(2)
+            width: dp(2) if self.selected else dp(1)
+
 
 <LibraryScreen>:
-    name: "library"
-    BoxLayout:
+    Background:
         orientation: "vertical"
-        canvas.before:
-            Color:
-                rgba: app.bg_color
-            Rectangle:
-                pos: self.pos
-                size: self.size
+
+        Label:
+            text: "ChunkReader"
+            font_name: app.font_name_value
+            font_size: sp(22)
+            bold: True
+            color: app.fg_color
+            size_hint_y: None
+            height: dp(56)
+            padding: dp(14), 0
+            text_size: self.size
+            halign: "left"
+            valign: "middle"
 
         BoxLayout:
             size_hint_y: None
-            height: 70
-            padding: 10
-            spacing: 10
-            Label:
-                text: "ChunkReader"
-                font_name: app.font_name_value
-                font_size: app.font_size_value * 0.6
-                color: app.fg_color
-                bold: True
-            Button:
-                text: "+ Add Book"
-                size_hint_x: None
-                width: 180
-                font_size: app.font_size_value * 0.4
+            height: dp(60)
+            padding: dp(12), dp(4)
+            spacing: dp(8)
+            FlatButton:
+                text: "+ Add book"
+                font_size: sp(17)
                 on_release: app.prompt_add_book()
-            Button:
+            FlatButton:
                 text: "Settings"
-                size_hint_x: None
-                width: 140
-                font_size: app.font_size_value * 0.4
+                font_size: sp(17)
                 on_release: app.go_to_settings()
 
         ScrollView:
+            do_scroll_x: False
             BoxLayout:
                 id: book_list
                 orientation: "vertical"
                 size_hint_y: None
                 height: self.minimum_height
-                spacing: 6
-                padding: 10
+                spacing: dp(8)
+                padding: dp(12)
 
 
 <ReaderScreen>:
-    name: "reader"
-    FloatLayout:
-        canvas.before:
-            Color:
-                rgba: app.bg_color
-            Rectangle:
-                pos: self.pos
-                size: self.size
-
-        BoxLayout:
-            orientation: "vertical"
-            size: root.width, root.height
-            pos: root.pos
-
-            BoxLayout:
-                size_hint_y: None
-                height: 60
-                padding: 10
-                spacing: 10
-                Button:
-                    text: "< Library"
-                    size_hint_x: None
-                    width: 140
-                    font_size: app.font_size_value * 0.35
-                    on_release: app.go_to_library()
-                Label:
-                    id: book_title_label
-                    font_name: app.font_name_value
-                    font_size: app.font_size_value * 0.4
-                    color: app.fg_color
-                Label:
-                    id: progress_label
-                    font_size: app.font_size_value * 0.35
-                    color: app.fg_color
-                    size_hint_x: None
-                    width: 100
-                Button:
-                    text: "Settings"
-                    size_hint_x: None
-                    width: 120
-                    font_size: app.font_size_value * 0.35
-                    on_release: app.go_to_settings()
-
-            # The chunk text fills the whole reading area. Two invisible
-            # tap zones sit on top of it: left 30% = previous, right 70%
-            # = next (mirrors the "advance the textbox" feel of VN UIs,
-            # while keeping the bigger zone for the common "go forward"
-            # action).
-            FloatLayout:
-                id: reader_area
-
-                Label:
-                    id: chunk_label
-                    text: ""
-                    markup: True
-                    font_name: app.font_name_value
-                    font_size: app.font_size_value
-                    line_height: app.line_spacing_value
-                    color: app.fg_color
-                    halign: "center"
-                    valign: "middle"
-                    text_size: self.width * 0.9, self.height * 0.9
-                    size: reader_area.size
-                    pos: reader_area.pos
-
-                Button:
-                    background_normal: ""
-                    background_color: 0, 0, 0, 0
-                    on_release: app.prev_chunk()
-                    size_hint: 0.3, 1
-                    pos_hint: {"x": 0, "y": 0}
-
-                Button:
-                    background_normal: ""
-                    background_color: 0, 0, 0, 0
-                    on_release: app.next_chunk()
-                    size_hint: 0.7, 1
-                    pos_hint: {"x": 0.3, "y": 0}
-
-
-<SettingsScreen>:
-    name: "settings"
     BoxLayout:
         orientation: "vertical"
         canvas.before:
             Color:
-                rgba: app.bg_color
+                rgba: (0, 0, 0, 1) if app.game_mode else app.bg_color
             Rectangle:
                 pos: self.pos
                 size: self.size
-        padding: 20
-        spacing: 16
 
         BoxLayout:
             size_hint_y: None
-            height: 60
+            height: dp(60)
+            padding: dp(10), dp(8)
+            spacing: dp(8)
+            FlatButton:
+                text: "< Books"
+                size_hint_x: None
+                width: dp(92)
+                on_release: app.go_to_library()
+            Label:
+                id: book_title_label
+                font_name: app.font_name_value
+                font_size: sp(14)
+                color: app.fg_color
+                text_size: self.size
+                halign: "center"
+                valign: "middle"
+                shorten: True
+                shorten_from: "right"
+            Label:
+                id: progress_label
+                font_name: app.font_name_value
+                font_size: sp(14)
+                color: app.accent_color
+                size_hint_x: None
+                width: dp(52)
+            FlatButton:
+                text: "Settings"
+                size_hint_x: None
+                width: dp(96)
+                on_release: app.go_to_settings()
+
+        # The chunk fills the reading area. Two invisible tap zones lie on
+        # top of it: the left 30% goes back, the right 70% goes forward.
+        FloatLayout:
+            id: reader_area
+            on_size: app.fit_chunk_text()
+
+            # Game mode: blue gradient window, white border, white letters.
+            Widget:
+                id: rpg_box
+                opacity: 1 if app.game_mode else 0
+                size_hint: 0.94, 0.94
+                pos_hint: {"center_x": 0.5, "center_y": 0.5}
+                canvas:
+                    Color:
+                        rgba: 1, 1, 1, 1
+                    RoundedRectangle:
+                        pos: self.pos
+                        size: self.size
+                        radius: [dp(12)]
+                    Color:
+                        rgba: 0.03, 0.04, 0.18, 1
+                    RoundedRectangle:
+                        pos: self.x + dp(4), self.y + dp(4)
+                        size: self.width - dp(8), self.height - dp(8)
+                        radius: [dp(9)]
+                    Color:
+                        rgba: 1, 1, 1, 1
+                    RoundedRectangle:
+                        texture: app.rpg_texture
+                        pos: self.x + dp(6), self.y + dp(6)
+                        size: self.width - dp(12), self.height - dp(12)
+                        radius: [dp(7)]
+                    # "more text" marker, bottom right, blinking slowly
+                    Color:
+                        rgba: 1, 1, 1, app.rpg_cursor_alpha
+                    Triangle:
+                        points: self.right - dp(40), self.y + dp(30), self.right - dp(20), self.y + dp(30), self.right - dp(30), self.y + dp(18)
+
+            Label:
+                id: chunk_label
+                markup: True
+                font_name: app.font_name_value
+                line_height: app.line_spacing_value
+                on_line_height: app.fit_chunk_text()
+                color: (1, 1, 1, 1) if app.game_mode else app.fg_color
+                valign: "middle"
+                size_hint: 1, 1
+                pos_hint: {"x": 0, "y": 0}
+
             Button:
+                background_normal: ""
+                background_down: ""
+                background_color: 0, 0, 0, 0
+                size_hint: 0.3, 1
+                pos_hint: {"x": 0, "y": 0}
+                on_release: app.prev_chunk()
+
+            Button:
+                background_normal: ""
+                background_down: ""
+                background_color: 0, 0, 0, 0
+                size_hint: 0.7, 1
+                pos_hint: {"x": 0.3, "y": 0}
+                on_release: app.next_chunk()
+
+        ProgressBar:
+            id: progress_bar
+            max: 1
+            value: 0
+            size_hint_y: None
+            height: dp(8)
+
+        Label:
+            text: "tap right = next        tap left = back"
+            font_name: app.font_name_value
+            font_size: sp(12)
+            color: app.fg_color
+            opacity: 0.55
+            size_hint_y: None
+            height: dp(30)
+
+
+<SettingsScreen>:
+    Background:
+        orientation: "vertical"
+
+        BoxLayout:
+            size_hint_y: None
+            height: dp(68)
+            padding: dp(12), dp(10)
+            spacing: dp(8)
+            FlatButton:
                 text: "< Back"
                 size_hint_x: None
-                width: 140
+                width: dp(100)
                 on_release: app.go_back_from_settings()
             Label:
                 text: "Settings"
                 font_name: app.font_name_value
-                font_size: app.font_size_value * 0.55
-                color: app.fg_color
+                font_size: sp(21)
                 bold: True
+                color: app.fg_color
+                text_size: self.size
+                halign: "left"
+                valign: "middle"
 
-        Label:
-            text: "Sentences per chunk: " + str(int(sentence_slider.value))
-            color: app.fg_color
-            font_size: app.font_size_value * 0.4
-            size_hint_y: None
-            height: 40
-        Slider:
-            id: sentence_slider
-            min: 1
-            max: 5
-            step: 1
-            value: app.sentences_per_chunk
-            size_hint_y: None
-            height: 40
-            on_value: app.set_sentences_per_chunk(self.value)
+        ScrollView:
+            do_scroll_x: False
+            BoxLayout:
+                orientation: "vertical"
+                size_hint_y: None
+                height: self.minimum_height
+                padding: dp(16), dp(4), dp(16), dp(24)
+                spacing: dp(6)
 
-        Label:
-            text: "Font size"
-            color: app.fg_color
-            font_size: app.font_size_value * 0.4
-            size_hint_y: None
-            height: 40
-        Slider:
-            id: font_slider
-            min: 20
-            max: 56
-            step: 2
-            value: app.font_size_value
-            size_hint_y: None
-            height: 40
-            on_value: app.set_font_size(self.value)
+                SettingLabel:
+                    text: "Sentences per chunk"
+                BoxLayout:
+                    id: chunk_size_row
+                    size_hint_y: None
+                    height: dp(56)
+                    spacing: dp(8)
+                    FlatButton:
+                        text: "2"
+                        font_size: sp(20)
+                        bold: True
+                        background_color: app.fg_color if app.sentences_per_chunk == 2 else (1, 1, 1, 0.14)
+                        color: app.bg_color if app.sentences_per_chunk == 2 else app.fg_color
+                        on_release: app.set_sentences_per_chunk(2)
+                    FlatButton:
+                        text: "3"
+                        font_size: sp(20)
+                        bold: True
+                        background_color: app.fg_color if app.sentences_per_chunk == 3 else (1, 1, 1, 0.14)
+                        color: app.bg_color if app.sentences_per_chunk == 3 else app.fg_color
+                        on_release: app.set_sentences_per_chunk(3)
+                    FlatButton:
+                        text: "5"
+                        font_size: sp(20)
+                        bold: True
+                        background_color: app.fg_color if app.sentences_per_chunk == 5 else (1, 1, 1, 0.14)
+                        color: app.bg_color if app.sentences_per_chunk == 5 else app.fg_color
+                        on_release: app.set_sentences_per_chunk(5)
 
-        Label:
-            text: "Line spacing"
-            color: app.fg_color
-            font_size: app.font_size_value * 0.4
-            size_hint_y: None
-            height: 40
-        Slider:
-            id: spacing_slider
-            min: 1.0
-            max: 2.5
-            step: 0.1
-            value: app.line_spacing_value
-            size_hint_y: None
-            height: 40
-            on_value: app.set_line_spacing(self.value)
+                SettingLabel:
+                    text: "Text size: %d" % int(font_slider.value)
+                Slider:
+                    id: font_slider
+                    min: 16
+                    max: 48
+                    step: 1
+                    value: app.font_size_value
+                    size_hint_y: None
+                    height: dp(48)
+                    on_value: app.set_font_size(self.value)
 
-        Label:
-            text: "Color theme"
-            color: app.fg_color
-            font_size: app.font_size_value * 0.4
-            size_hint_y: None
-            height: 40
+                SettingLabel:
+                    text: "Line spacing: %.1f" % spacing_slider.value
+                Slider:
+                    id: spacing_slider
+                    min: 1.0
+                    max: 2.2
+                    step: 0.1
+                    value: app.line_spacing_value
+                    size_hint_y: None
+                    height: dp(48)
+                    on_value: app.set_line_spacing(self.value)
 
-        GridLayout:
-            cols: 2
-            spacing: 8
-            size_hint_y: None
-            height: 140
-            Button:
-                text: "Black & White"
-                on_release: app.set_theme("classic_bw")
-            Button:
-                text: "Cream on Black"
-                on_release: app.set_theme("cream_black")
-            Button:
-                text: "Navy & Off-white"
-                on_release: app.set_theme("navy_offwhite")
-            Button:
-                text: "Black & Yellow"
-                on_release: app.set_theme("high_contrast_yellow")
-            Button:
-                text: "Soft Sepia"
-                on_release: app.set_theme("sepia")
+                Label:
+                    id: sample_label
+                    text: "This is how the text in your book will look."
+                    font_name: app.font_name_value
+                    font_size: sp(app.font_size_value)
+                    line_height: app.line_spacing_value
+                    color: app.fg_color
+                    size_hint_y: None
+                    text_size: self.width, None
+                    height: self.texture_size[1] + dp(20)
+                    halign: "left"
+                    valign: "middle"
 
-        Widget:
+                SettingLabel:
+                    text: "Game mode (blue text box, like a 16-bit RPG)"
+                FlatButton:
+                    text: "Game mode: ON" if app.game_mode else "Game mode: OFF"
+                    font_size: sp(17)
+                    bold: app.game_mode
+                    size_hint_y: None
+                    height: dp(54)
+                    on_release: app.toggle_game_mode()
+
+                SettingLabel:
+                    text: "Colours (when game mode is off)"
+                BoxLayout:
+                    id: theme_list
+                    orientation: "vertical"
+                    size_hint_y: None
+                    height: self.minimum_height
+                    spacing: dp(8)
+
+                Label:
+                    text: app.version_text
+                    font_size: sp(12)
+                    color: app.fg_color
+                    opacity: 0.55
+                    size_hint_y: None
+                    height: dp(44)
