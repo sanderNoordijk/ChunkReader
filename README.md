@@ -7,7 +7,9 @@ large, clear font - like a dialogue box in a video game.
 ## Features
 
 - Add your own `.epub` and `.pdf` files (kept on the device only)
-- 2, 3 or 5 lines of text at a time
+- 2, 3 or 5 lines of text at a time; a page stops at the end of a
+  sentence or at a comma where it can, not in the middle of a phrase
+- Chapter list, and a bar you can drag to move through the book
 - OpenDyslexic font, adjustable text size and line spacing
 - Five colour themes, plus **game mode**: a blue text box with a white
   border and white letters, in the style of 16-bit role-playing games

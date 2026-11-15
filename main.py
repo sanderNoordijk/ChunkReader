@@ -3,7 +3,7 @@ ChunkReader - an EPUB/PDF reader that shows a book a few sentences at a
 time - a few lines per screen, like a dialogue box in a video game.
 """
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 import os
 import threading
@@ -82,6 +82,15 @@ class ReaderScreen(Screen):
 
 class SettingsScreen(Screen):
     pass
+
+
+class ChaptersScreen(Screen):
+    pass
+
+
+class ChapterButton(Button):
+    unit_index = NumericProperty(0)
+    current = BooleanProperty(False)
 
 
 class ReaderArea(FloatLayout):
@@ -184,6 +193,7 @@ class ChunkReaderApp(App):
         self._page_cache = {}
         self._metrics = None
         self._layout_dirty = True
+        self._setting_slider = False
         self.settings_return_to = "library"
         self._startup_error = None
         self._busy_popup = None
@@ -221,6 +231,7 @@ class ChunkReaderApp(App):
         self.sm.add_widget(LibraryScreen(name="library"))
         self.sm.add_widget(ReaderScreen(name="reader"))
         self.sm.add_widget(SettingsScreen(name="settings"))
+        self.sm.add_widget(ChaptersScreen(name="chapters"))
         self._build_theme_buttons()
 
         ExceptionManager.add_handler(CrashGuard(self))
@@ -560,12 +571,15 @@ class ChunkReaderApp(App):
         self._measure = {False: self._measure_function(False),
                          True: self._measure_function(True)}
         self._page_cache = {}
-        unit = self.current_book.get("position", 0)
-        word = self.current_book.get("position_word", 0)
+        self._layout_dirty = False
+        self._find_page(self.current_book.get("position", 0),
+                        self.current_book.get("position_word", 0))
+
+    def _find_page(self, unit, word):
+        """Point the reader at the page that contains this word."""
         self.block_index = reader_engine.block_index_for_unit(self.current_blocks, unit)
         self.page_index = reader_engine.page_index_for_word(
             self._pages(self.block_index), unit, word)
-        self._layout_dirty = False
 
     def _pages(self, block_index):
         """The pages of one block (laid out the first time it is needed)."""
@@ -619,7 +633,9 @@ class ChunkReaderApp(App):
             fraction = 1.0
         else:
             fraction = page["unit"] / max(1, len(self.current_units) - 1)
-        ids.progress_bar.value = fraction
+        self._setting_slider = True
+        ids.progress_slider.value = fraction
+        self._setting_slider = False
         ids.progress_label.text = f"{round(fraction * 100)}%"
         ids.book_title_label.text = self.current_book["title"]
 
@@ -659,6 +675,62 @@ class ChunkReaderApp(App):
     # Navigation
     # ------------------------------------------------------------------
 
+    def jump_to(self, unit, word=0):
+        """Go straight to a place in the book (a chapter, or the slider)."""
+        if not self.current_blocks:
+            return
+        unit = max(0, min(int(unit), len(self.current_units) - 1))
+        self.current_book["position"] = unit
+        self.current_book["position_word"] = word
+        self.storage.update_book(
+            self.current_book["id"], position=unit, position_word=word)
+        if not self._layout_dirty:
+            self._find_page(unit, word)
+        self.sm.current = "reader"
+        self.update_reader_view()
+
+    def on_slider_moved(self, value):
+        """While the progress slider is dragged: show where you would land."""
+        if not self._setting_slider and self.sm is not None:
+            ids = self.sm.get_screen("reader").ids
+            ids.progress_label.text = f"{round(value * 100)}%"
+
+    def on_slider_released(self, value):
+        self.jump_to(round(value * (len(self.current_units) - 1)))
+
+    def open_chapters(self):
+        chapters = reader_engine.list_chapters(self.current_units)
+        if not chapters:
+            self.show_message(
+                "No chapters",
+                "This book has no chapter headings.\n\nTo move through the "
+                "book, drag the bar at the bottom of the screen.")
+            return
+        position = self.current_book.get("position", 0)
+        current = max((u for u, _ in chapters if u <= position), default=None)
+        container = self.sm.get_screen("chapters").ids.chapter_list
+        container.clear_widgets()
+        current_button = None
+        last = max(1, len(self.current_units) - 1)
+        for unit, title in chapters:
+            button = ChapterButton(
+                text=f"{title}   [size={int(sp(12))}]{round(100 * unit / last)}%[/size]",
+                unit_index=unit, current=(unit == current))
+            button.bind(on_release=lambda inst: self.jump_to(inst.unit_index))
+            container.add_widget(button)
+            if unit == current:
+                current_button = button
+        self.sm.current = "chapters"
+        scroll = self.sm.get_screen("chapters").ids.chapter_scroll
+        scroll.scroll_y = 1
+        if current_button is not None:
+            Clock.schedule_once(
+                lambda dt: scroll.scroll_to(current_button, padding=dp(120), animate=False), 0.1)
+
+    def back_to_reader(self):
+        self.sm.current = "reader"
+        self.update_reader_view()
+
     def go_to_library(self):
         self.sm.current = "library"
         self.refresh_library()
@@ -685,6 +757,9 @@ class ChunkReaderApp(App):
                 return True
             if current == "settings":
                 self.go_back_from_settings()
+                return True
+            if current == "chapters":
+                self.back_to_reader()
                 return True
             return False   # on the library screen: leave the app
         if current == "reader":

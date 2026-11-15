@@ -39,9 +39,10 @@ def functions_in(filename):
 EXPECTED = {
     "main.py": {"ChunkReaderApp", "build", "open_book_by_id", "import_file",
                 "update_reader_view", "next_page", "set_lines_per_page",
+                "open_chapters", "jump_to",
                 "ReaderArea", "set_theme"},
     "reader_engine.py": {"split_sentences", "extract_book", "build_blocks",
-                         "paginate_block", "load_or_parse_book"},
+                         "paginate_block", "list_chapters", "load_or_parse_book"},
     "storage.py": {"Storage", "import_book", "update_book", "remove_book"},
     "android_picker.py": {"pick_document", "copy_uri_to_path"},
 }
@@ -52,7 +53,7 @@ for filename, names in EXPECTED.items():
 kv_path = os.path.join(ROOT, "chunkreader.kv")
 kv = open(kv_path, encoding="utf-8").read() if os.path.exists(kv_path) else ""
 for rule in ("<LibraryScreen>:", "<ReaderScreen>:", "<SettingsScreen>:", "<BookRow>:",
-             "ReaderArea:"):
+             "ReaderArea:", "<ChaptersScreen>:"):
     need(rule in kv, f"chunkreader.kv is missing the {rule} section")
 
 for font in ("OpenDyslexic-Regular.otf", "OpenDyslexic-Bold.otf"):
@@ -92,6 +93,14 @@ if not problems:
          f"page layout is broken: {pages}")
     need(all(len(line) <= 7 for page in pages for line in page["lines"]),
          "page layout makes lines that are too wide")
+    # A page stops early at the end of a sentence instead of mid-sentence.
+    units2 = reader_engine.paragraphs_to_units(
+        [{"type": "para", "text": "Aa bb cc. Dd ee ff gg hh ii."}])
+    pages2 = reader_engine.paginate_block(
+        units2, reader_engine.build_blocks(units2)[0], len, 9, 2)
+    need([p["lines"] for p in pages2] == [["Aa bb cc."], ["Dd ee ff", "gg hh ii."]],
+         f"pages do not stop at sentence ends: {pages2}")
+    need(reader_engine.list_chapters(units) == [(0, "One")], "chapter list is broken")
 
 if problems:
     print("SELF-CHECK FAILED - the app was NOT built:\n")

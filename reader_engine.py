@@ -378,7 +378,7 @@ def paragraphs_to_units(paragraphs):
 #
 # The book is cut into "blocks" (a heading, or a run of sentences). Each
 # block is wrapped into lines that fit the screen and cut into pages of
-# N lines. Blocks are laid out one at a time, only when they are needed,
+# at most N lines, ending at a natural pause where possible. Blocks are laid out one at a time, only when they are needed,
 # so opening a long book stays instant.
 
 def build_blocks(units, max_sentences=40):
@@ -421,33 +421,88 @@ def _split_wide_word(word, measure, max_width):
     return pieces
 
 
-def wrap_tokens(tokens, measure, max_width):
+def _block_tokens(units, block, measure, max_width):
     """
-    Wrap tokens into lines no wider than `max_width`.
+    The words of a block as tokens: (text, unit_index, word_index, ends_sentence).
+    """
+    tokens = []
+    for unit_index in range(block["start"], block["end"]):
+        words = units[unit_index][1].split()
+        for word_index, word in enumerate(words):
+            ends_sentence = word_index == len(words) - 1
+            if len(word) > 6 and measure(word) > max_width:
+                pieces = _split_wide_word(word, measure, max_width)
+                for k, piece in enumerate(pieces):
+                    tokens.append((piece, unit_index, word_index,
+                                   ends_sentence and k == len(pieces) - 1))
+            else:
+                tokens.append((word, unit_index, word_index, ends_sentence))
+    return tokens
 
-    tokens:  list of (text, unit_index, word_index)
-    measure: function(text) -> width, in the same unit as max_width
-    Returns a list of lines; each line is a list of tokens.
+
+def _take_lines(tokens, first, measure, max_width, max_lines):
+    """
+    Wrap tokens, starting at index `first`, into at most `max_lines` lines
+    no wider than `max_width`. Returns the lines as lists of token indexes.
     """
     lines = []
     current = []
-    current_text = ""
-    for token in tokens:
-        candidate = current_text + " " + token[0] if current else token[0]
+    text = ""
+    for index in range(first, len(tokens)):
+        word = tokens[index][0]
+        candidate = text + " " + word if current else word
         if current and measure(candidate) > max_width:
             lines.append(current)
-            current, candidate = [], token[0]
-        if not current and measure(candidate) > max_width:
-            pieces = _split_wide_word(token[0], measure, max_width)
-            for piece in pieces[:-1]:
-                lines.append([(piece, token[1], token[2])])
-            token = (pieces[-1], token[1], token[2])
-            candidate = token[0]
-        current.append(token)
-        current_text = candidate
+            if len(lines) == max_lines:
+                return lines
+            current, candidate = [], word
+        current.append(index)
+        text = candidate
     if current:
         lines.append(current)
     return lines
+
+
+# A page may stop early at a natural pause, so that reading stops where
+# the sentence does - but only if the page is reasonably full by then.
+_SENTENCE_END_FILL = 0.4    # stop at the end of a sentence if >= 40% full
+_PAUSE_FILL = 0.55          # stop at a comma etc. if >= 55% full
+_PAUSE_MARKS = (",", ";", ":", "\u2014", "\u2013")
+_CLOSERS = "\"'\u201d\u2019)]"
+
+
+def _choose_page_end(tokens, first, last):
+    """
+    Given a full page holding tokens first..last, return the index of the
+    token the page should really end on.
+    """
+    if last >= len(tokens) - 1:
+        return last
+    count = last - first + 1
+
+    def full_enough(index, fill):
+        return index - first + 1 >= count * fill
+
+    # 1. The end of a sentence.
+    for index in range(last, first - 1, -1):
+        if tokens[index][3]:
+            if full_enough(index, _SENTENCE_END_FILL):
+                return index
+            break
+
+    # 2. A pause within the sentence. Be more willing to stop there if the
+    #    sentence would otherwise spill just one or two words onto the
+    #    next page.
+    spills = any(tokens[i][3] for i in range(last + 1, min(last + 3, len(tokens))))
+    fill = _SENTENCE_END_FILL if spills else _PAUSE_FILL
+    for index in range(last, first - 1, -1):
+        if not full_enough(index, fill):
+            break
+        if tokens[index][0].rstrip(_CLOSERS).endswith(_PAUSE_MARKS):
+            return index
+
+    # 3. No good place to stop: use the whole page.
+    return last
 
 
 def paginate_block(units, block, measure, max_width, lines_per_page):
@@ -455,27 +510,36 @@ def paginate_block(units, block, measure, max_width, lines_per_page):
     Lay out one block as pages of at most `lines_per_page` lines:
         {"lines": ["...", "..."], "unit": u, "word": w, "heading": bool}
     (unit, word) is where the page starts: word `w` of unit `u`.
-    """
-    tokens = []
-    for unit_index in range(block["start"], block["end"]):
-        for word_index, word in enumerate(units[unit_index][1].split()):
-            tokens.append((word, unit_index, word_index))
-    lines = wrap_tokens(tokens, measure, max_width)
 
+    measure: function(text) -> width, in the same unit as max_width.
+    """
     lines_per_page = max(1, int(lines_per_page))
+    is_heading = block["type"] == "heading"
+    tokens = _block_tokens(units, block, measure, max_width)
+
     pages = []
-    for first in range(0, len(lines), lines_per_page):
-        page_lines = lines[first:first + lines_per_page]
-        pages.append({
-            "lines": [" ".join(token[0] for token in line) for line in page_lines],
-            "unit": page_lines[0][0][1],
-            "word": page_lines[0][0][2],
-            "heading": block["type"] == "heading",
-        })
+    first = 0
+    while first < len(tokens):
+        lines = _take_lines(tokens, first, measure, max_width, lines_per_page)
+        end = _choose_page_end(tokens, first, lines[-1][-1])
+        page_lines = []
+        for line in lines:
+            kept = [tokens[i][0] for i in line if i <= end]
+            if kept:
+                page_lines.append(" ".join(kept))
+        pages.append({"lines": page_lines, "unit": tokens[first][1],
+                      "word": tokens[first][2], "heading": is_heading})
+        first = end + 1
+
     if not pages:   # a block without any words
         pages.append({"lines": [""], "unit": block["start"], "word": 0,
-                      "heading": block["type"] == "heading"})
+                      "heading": is_heading})
     return pages
+
+
+def list_chapters(units):
+    """The headings of a book: [(unit_index, title), ...]."""
+    return [(index, text) for index, (kind, text) in enumerate(units) if kind == "h"]
 
 
 def block_index_for_unit(blocks, unit_index):
