@@ -157,18 +157,18 @@
                 width: dp(96)
                 on_release: app.go_to_settings()
 
-        # The chunk fills the reading area. Two invisible tap zones lie on
-        # top of it: the left 30% goes back, the right 70% goes forward.
-        FloatLayout:
+        # A few lines of text at a time. The box and the text are sized
+        # and placed by the app (see update_reader_view in main.py).
+        ReaderArea:
             id: reader_area
-            on_size: app.fit_chunk_text()
+            on_size: app.on_reader_resized()
+            on_pos: app.on_reader_resized()
 
             # Game mode: blue gradient window, white border, white letters.
             Widget:
                 id: rpg_box
+                size_hint: None, None
                 opacity: 1 if app.game_mode else 0
-                size_hint: 0.94, 0.94
-                pos_hint: {"center_x": 0.5, "center_y": 0.5}
                 canvas:
                     Color:
                         rgba: 1, 1, 1, 1
@@ -193,34 +193,15 @@
                     Color:
                         rgba: 1, 1, 1, app.rpg_cursor_alpha
                     Triangle:
-                        points: self.right - dp(40), self.y + dp(30), self.right - dp(20), self.y + dp(30), self.right - dp(30), self.y + dp(18)
+                        points: self.right - dp(30), self.y + dp(20), self.right - dp(14), self.y + dp(20), self.right - dp(22), self.y + dp(11)
 
             Label:
                 id: chunk_label
                 markup: True
+                size_hint: None, None
                 font_name: app.font_name_value
                 line_height: app.line_spacing_value
-                on_line_height: app.fit_chunk_text()
                 color: (1, 1, 1, 1) if app.game_mode else app.fg_color
-                valign: "middle"
-                size_hint: 1, 1
-                pos_hint: {"x": 0, "y": 0}
-
-            Button:
-                background_normal: ""
-                background_down: ""
-                background_color: 0, 0, 0, 0
-                size_hint: 0.3, 1
-                pos_hint: {"x": 0, "y": 0}
-                on_release: app.prev_chunk()
-
-            Button:
-                background_normal: ""
-                background_down: ""
-                background_color: 0, 0, 0, 0
-                size_hint: 0.7, 1
-                pos_hint: {"x": 0.3, "y": 0}
-                on_release: app.next_chunk()
 
         ProgressBar:
             id: progress_bar
@@ -230,7 +211,7 @@
             height: dp(8)
 
         Label:
-            text: "tap right = next        tap left = back"
+            text: "next: swipe, or tap right      back: tap left"
             font_name: app.font_name_value
             font_size: sp(12)
             color: app.fg_color
@@ -273,7 +254,7 @@
                 spacing: dp(6)
 
                 SettingLabel:
-                    text: "Sentences per chunk"
+                    text: "Lines of text at a time"
                 BoxLayout:
                     id: chunk_size_row
                     size_hint_y: None
@@ -283,23 +264,23 @@
                         text: "2"
                         font_size: sp(20)
                         bold: True
-                        background_color: app.fg_color if app.sentences_per_chunk == 2 else (1, 1, 1, 0.14)
-                        color: app.bg_color if app.sentences_per_chunk == 2 else app.fg_color
-                        on_release: app.set_sentences_per_chunk(2)
+                        background_color: app.fg_color if app.lines_per_page == 2 else (1, 1, 1, 0.14)
+                        color: app.bg_color if app.lines_per_page == 2 else app.fg_color
+                        on_release: app.set_lines_per_page(2)
                     FlatButton:
                         text: "3"
                         font_size: sp(20)
                         bold: True
-                        background_color: app.fg_color if app.sentences_per_chunk == 3 else (1, 1, 1, 0.14)
-                        color: app.bg_color if app.sentences_per_chunk == 3 else app.fg_color
-                        on_release: app.set_sentences_per_chunk(3)
+                        background_color: app.fg_color if app.lines_per_page == 3 else (1, 1, 1, 0.14)
+                        color: app.bg_color if app.lines_per_page == 3 else app.fg_color
+                        on_release: app.set_lines_per_page(3)
                     FlatButton:
                         text: "5"
                         font_size: sp(20)
                         bold: True
-                        background_color: app.fg_color if app.sentences_per_chunk == 5 else (1, 1, 1, 0.14)
-                        color: app.bg_color if app.sentences_per_chunk == 5 else app.fg_color
-                        on_release: app.set_sentences_per_chunk(5)
+                        background_color: app.fg_color if app.lines_per_page == 5 else (1, 1, 1, 0.14)
+                        color: app.bg_color if app.lines_per_page == 5 else app.fg_color
+                        on_release: app.set_lines_per_page(5)
 
                 SettingLabel:
                     text: "Text size: %d" % int(font_slider.value)

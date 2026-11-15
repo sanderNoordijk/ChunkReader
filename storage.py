@@ -3,7 +3,7 @@ storage.py
 
 Local-only persistence (no accounts, no network) for:
 - the library: imported books + where you stopped reading in each
-- settings: theme, font size, line spacing, sentences per chunk
+- settings: theme, font size, line spacing, lines per page
 
 Everything lives in the app's private data folder on the device.
 """
@@ -19,8 +19,8 @@ BOOKS_SUBDIR = "books"
 CACHE_SUBDIR = "chunk_cache"
 
 DEFAULT_SETTINGS = {
-    "sentences_per_chunk": 3,
-    "font_size": 26,          # in sp: scales with the screen and the
+    "lines_per_page": 3,
+    "font_size": 22,          # in sp: scales with the screen and the
                               # system font-size setting
     "line_spacing": 1.4,
     "theme": "classic_bw",    # a key of THEMES
@@ -29,7 +29,7 @@ DEFAULT_SETTINGS = {
 
 # Pure white on black causes glare ("halation") for some readers, so
 # softer alternatives are offered next to it.
-CHUNK_SIZES = (2, 3, 5)   # the sentence counts the reader offers
+LINE_CHOICES = (2, 3, 5)   # lines of text shown at a time
 
 THEMES = {
     "classic_bw": {"label": "Black & White", "bg": "#000000", "fg": "#FFFFFF", "accent": "#4A90D9"},
@@ -73,8 +73,8 @@ class Storage:
         stored = _read_json(self._settings_path, {})
         if isinstance(stored, dict):
             settings.update({k: v for k, v in stored.items() if k in DEFAULT_SETTINGS})
-        if settings["sentences_per_chunk"] not in CHUNK_SIZES:
-            settings["sentences_per_chunk"] = DEFAULT_SETTINGS["sentences_per_chunk"]
+        if settings["lines_per_page"] not in LINE_CHOICES:
+            settings["lines_per_page"] = DEFAULT_SETTINGS["lines_per_page"]
         if settings["theme"] not in THEMES:
             settings["theme"] = DEFAULT_SETTINGS["theme"]
         return settings
@@ -109,7 +109,8 @@ class Storage:
             "id": book_id,
             "filename": os.path.basename(stored_path),
             "title": title,
-            "position": 0,        # index of the reading unit you are at
+            "position": 0,        # the sentence you are at ...
+            "position_word": 0,   # ... and the word within it
             "total_units": None,  # filled in the first time the book opens
         }
         library = self.load_library()

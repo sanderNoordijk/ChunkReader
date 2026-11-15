@@ -38,9 +38,10 @@ def functions_in(filename):
 
 EXPECTED = {
     "main.py": {"ChunkReaderApp", "build", "open_book_by_id", "import_file",
-                "update_reader_view", "fit_chunk_text", "set_theme"},
-    "reader_engine.py": {"split_sentences", "extract_book", "build_chunks",
-                         "load_or_parse_book", "chunk_index_for_position"},
+                "update_reader_view", "next_page", "set_lines_per_page",
+                "ReaderArea", "set_theme"},
+    "reader_engine.py": {"split_sentences", "extract_book", "build_blocks",
+                         "paginate_block", "load_or_parse_book"},
     "storage.py": {"Storage", "import_book", "update_book", "remove_book"},
     "android_picker.py": {"pick_document", "copy_uri_to_path"},
 }
@@ -50,7 +51,8 @@ for filename, names in EXPECTED.items():
 
 kv_path = os.path.join(ROOT, "chunkreader.kv")
 kv = open(kv_path, encoding="utf-8").read() if os.path.exists(kv_path) else ""
-for rule in ("<LibraryScreen>:", "<ReaderScreen>:", "<SettingsScreen>:", "<BookRow>:"):
+for rule in ("<LibraryScreen>:", "<ReaderScreen>:", "<SettingsScreen>:", "<BookRow>:",
+             "ReaderArea:"):
     need(rule in kv, f"chunkreader.kv is missing the {rule} section")
 
 for font in ("OpenDyslexic-Regular.otf", "OpenDyslexic-Bold.otf"):
@@ -81,9 +83,15 @@ if not problems:
     need(len(sentences) == 3, f"sentence splitting is broken: {sentences}")
     units = reader_engine.paragraphs_to_units(
         [{"type": "heading", "text": "One"}, {"type": "para", "text": "A b. C d. E f. G h."}])
-    chunks = reader_engine.build_chunks(units, 3)
-    need([c["type"] for c in chunks] == ["heading", "text", "text"],
-         f"chunk building is broken: {chunks}")
+    blocks = reader_engine.build_blocks(units)
+    need([b["type"] for b in blocks] == ["heading", "text"],
+         f"block building is broken: {blocks}")
+    # Lay the text out with a pretend font in which every letter is 1 wide.
+    pages = reader_engine.paginate_block(units, blocks[1], len, 7, 3)
+    need([p["lines"] for p in pages] == [["A b. C", "d. E f.", "G h."]],
+         f"page layout is broken: {pages}")
+    need(all(len(line) <= 7 for page in pages for line in page["lines"]),
+         "page layout makes lines that are too wide")
 
 if problems:
     print("SELF-CHECK FAILED - the app was NOT built:\n")

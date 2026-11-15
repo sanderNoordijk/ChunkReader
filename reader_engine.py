@@ -2,7 +2,7 @@
 reader_engine.py
 
 Turns an .epub or .pdf into a flat list of reading "units" (headings and
-sentences), and groups those units into chunks of N sentences.
+sentences), and lays that text out as pages of a few lines each.
 
 Dependencies are kept to the bare minimum on purpose, because every
 third-party package has to survive python-for-android's packaging step:
@@ -372,42 +372,128 @@ def paragraphs_to_units(paragraphs):
     return units
 
 
-def build_chunks(units, sentences_per_chunk=3):
-    """
-    Group units into chunks:
-        {"type": "heading", "text": "...", "start": unit_index}
-        {"type": "text", "sentences": [...], "start": unit_index}
-    A heading is always a chunk of its own, and a chunk never spans one.
-    """
-    sentences_per_chunk = max(1, int(sentences_per_chunk))
-    chunks = []
-    current = []
-    current_start = 0
+# ---------------------------------------------------------------------
+# Pages: a few LINES of text at a time
+# ---------------------------------------------------------------------
+#
+# The book is cut into "blocks" (a heading, or a run of sentences). Each
+# block is wrapped into lines that fit the screen and cut into pages of
+# N lines. Blocks are laid out one at a time, only when they are needed,
+# so opening a long book stays instant.
 
-    for index, (kind, text) in enumerate(units):
+def build_blocks(units, max_sentences=40):
+    """
+    Split the units into blocks:
+        {"type": "heading", "start": i, "end": i + 1}
+        {"type": "text", "start": i, "end": j}      (sentences i .. j-1)
+    A block of text holds at most `max_sentences` sentences.
+    """
+    blocks = []
+    start = None
+    for index, (kind, _text) in enumerate(units):
         if kind == "h":
-            if current:
-                chunks.append({"type": "text", "sentences": current, "start": current_start})
-                current = []
-            chunks.append({"type": "heading", "text": text, "start": index})
-            continue
-        if not current:
-            current_start = index
-        current.append(text)
-        if len(current) >= sentences_per_chunk:
-            chunks.append({"type": "text", "sentences": current, "start": current_start})
-            current = []
+            if start is not None:
+                blocks.append({"type": "text", "start": start, "end": index})
+                start = None
+            blocks.append({"type": "heading", "start": index, "end": index + 1})
+        elif start is None:
+            start = index
+        elif index - start >= max_sentences:
+            blocks.append({"type": "text", "start": start, "end": index})
+            start = index
+    if start is not None:
+        blocks.append({"type": "text", "start": start, "end": len(units)})
+    return blocks
 
+
+def _split_wide_word(word, measure, max_width):
+    """Cut a word that is wider than a whole line into pieces that fit."""
+    pieces = []
+    piece = ""
+    for char in word:
+        if piece and measure(piece + char) > max_width:
+            pieces.append(piece)
+            piece = char
+        else:
+            piece += char
+    if piece:
+        pieces.append(piece)
+    return pieces
+
+
+def wrap_tokens(tokens, measure, max_width):
+    """
+    Wrap tokens into lines no wider than `max_width`.
+
+    tokens:  list of (text, unit_index, word_index)
+    measure: function(text) -> width, in the same unit as max_width
+    Returns a list of lines; each line is a list of tokens.
+    """
+    lines = []
+    current = []
+    current_text = ""
+    for token in tokens:
+        candidate = current_text + " " + token[0] if current else token[0]
+        if current and measure(candidate) > max_width:
+            lines.append(current)
+            current, candidate = [], token[0]
+        if not current and measure(candidate) > max_width:
+            pieces = _split_wide_word(token[0], measure, max_width)
+            for piece in pieces[:-1]:
+                lines.append([(piece, token[1], token[2])])
+            token = (pieces[-1], token[1], token[2])
+            candidate = token[0]
+        current.append(token)
+        current_text = candidate
     if current:
-        chunks.append({"type": "text", "sentences": current, "start": current_start})
-    return chunks
+        lines.append(current)
+    return lines
 
 
-def chunk_index_for_position(chunks, position):
-    """Index of the chunk that contains reading position `position`."""
+def paginate_block(units, block, measure, max_width, lines_per_page):
+    """
+    Lay out one block as pages of at most `lines_per_page` lines:
+        {"lines": ["...", "..."], "unit": u, "word": w, "heading": bool}
+    (unit, word) is where the page starts: word `w` of unit `u`.
+    """
+    tokens = []
+    for unit_index in range(block["start"], block["end"]):
+        for word_index, word in enumerate(units[unit_index][1].split()):
+            tokens.append((word, unit_index, word_index))
+    lines = wrap_tokens(tokens, measure, max_width)
+
+    lines_per_page = max(1, int(lines_per_page))
+    pages = []
+    for first in range(0, len(lines), lines_per_page):
+        page_lines = lines[first:first + lines_per_page]
+        pages.append({
+            "lines": [" ".join(token[0] for token in line) for line in page_lines],
+            "unit": page_lines[0][0][1],
+            "word": page_lines[0][0][2],
+            "heading": block["type"] == "heading",
+        })
+    if not pages:   # a block without any words
+        pages.append({"lines": [""], "unit": block["start"], "word": 0,
+                      "heading": block["type"] == "heading"})
+    return pages
+
+
+def block_index_for_unit(blocks, unit_index):
+    """Index of the block that contains unit `unit_index`."""
     index = 0
-    for i, chunk in enumerate(chunks):
-        if chunk["start"] <= position:
+    for i, block in enumerate(blocks):
+        if block["start"] <= unit_index:
+            index = i
+        else:
+            break
+    return index
+
+
+def page_index_for_word(pages, unit_index, word_index):
+    """Index of the page (within one block) that contains the given word."""
+    index = 0
+    for i, page in enumerate(pages):
+        if (page["unit"], page["word"]) <= (unit_index, word_index):
             index = i
         else:
             break

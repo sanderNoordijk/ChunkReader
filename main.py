@@ -1,9 +1,9 @@
 """
 ChunkReader - an EPUB/PDF reader that shows a book a few sentences at a
-time, like a dialogue box in a video game, for easier reading.
+time - a few lines per screen, like a dialogue box in a video game.
 """
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 import os
 import threading
@@ -13,6 +13,7 @@ import traceback
 from kivy.app import App
 from kivy.base import ExceptionHandler, ExceptionManager
 from kivy.clock import Clock
+from kivy.core.text import Label as CoreLabel
 from kivy.core.text import LabelBase
 from kivy.core.window import Window
 from kivy.graphics.texture import Texture
@@ -24,6 +25,7 @@ from kivy.properties import (
 )
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
+from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.label import Label
 from kivy.uix.popup import Popup
 from kivy.uix.screenmanager import NoTransition, Screen, ScreenManager
@@ -31,7 +33,7 @@ from kivy.uix.scrollview import ScrollView
 from kivy.utils import escape_markup, platform
 
 import reader_engine
-from storage import CHUNK_SIZES, DEFAULT_SETTINGS, THEMES, Storage
+from storage import DEFAULT_SETTINGS, LINE_CHOICES, THEMES, Storage
 
 try:  # written by the GitHub Actions build, absent when run from source
     from build_info import BUILD
@@ -42,6 +44,7 @@ APP_DIR = os.path.dirname(os.path.abspath(__file__))
 READING_FONT = "OpenDyslexic"
 FALLBACK_FONT = "Roboto"   # ships with Kivy
 MIN_FIT_FONT_SP = 12
+SWIPE_DISTANCE_DP = 40
 
 # Game mode: a blue window with a white border and white letters, in the
 # style of 16-bit role-playing games.
@@ -79,6 +82,39 @@ class ReaderScreen(Screen):
 
 class SettingsScreen(Screen):
     pass
+
+
+class ReaderArea(FloatLayout):
+    """
+    The reading area. Go to the next page by swiping left or by tapping
+    anywhere on the right 70%; go back by swiping right or by tapping the
+    left 30%.
+    """
+
+    def on_touch_down(self, touch):
+        if self.collide_point(*touch.pos):
+            touch.ud["reader_start"] = touch.pos
+            return True
+        return super().on_touch_down(touch)
+
+    def on_touch_up(self, touch):
+        start = touch.ud.get("reader_start")
+        if start is None:
+            return super().on_touch_up(touch)
+        app = App.get_running_app()
+        dx, dy = touch.x - start[0], touch.y - start[1]
+        limit = dp(SWIPE_DISTANCE_DP)
+        if abs(dx) >= limit and abs(dx) > abs(dy):      # horizontal swipe
+            if dx < 0:
+                app.next_page()
+            else:
+                app.prev_page()
+        elif abs(dx) < limit and abs(dy) < limit:        # tap
+            if touch.x - self.x < self.width * 0.3:
+                app.prev_page()
+            else:
+                app.next_page()
+        return True
 
 
 class BookRow(BoxLayout):
@@ -125,7 +161,7 @@ class ChunkReaderApp(App):
     font_name_value = StringProperty(FALLBACK_FONT)
     font_size_value = NumericProperty(DEFAULT_SETTINGS["font_size"])
     line_spacing_value = NumericProperty(DEFAULT_SETTINGS["line_spacing"])
-    sentences_per_chunk = NumericProperty(DEFAULT_SETTINGS["sentences_per_chunk"])
+    lines_per_page = NumericProperty(DEFAULT_SETTINGS["lines_per_page"])
     game_mode = BooleanProperty(False)
     rpg_texture = ObjectProperty(None, allownone=True)
     rpg_cursor_alpha = NumericProperty(1.0)
@@ -142,8 +178,12 @@ class ChunkReaderApp(App):
         self.settings_data = dict(DEFAULT_SETTINGS)
         self.current_book = None
         self.current_units = []
-        self.current_chunks = []
-        self.current_chunk_index = 0
+        self.current_blocks = []
+        self.block_index = 0
+        self.page_index = 0
+        self._page_cache = {}
+        self._metrics = None
+        self._layout_dirty = True
         self.settings_return_to = "library"
         self._startup_error = None
         self._busy_popup = None
@@ -244,7 +284,7 @@ class ChunkReaderApp(App):
         self.accent_color = hex_to_rgba(theme["accent"])
         self.font_size_value = s["font_size"]
         self.line_spacing_value = s["line_spacing"]
-        self.sentences_per_chunk = s["sentences_per_chunk"]
+        self.lines_per_page = s["lines_per_page"]
         self.game_mode = bool(s["game_mode"])
         Window.clearcolor = self.bg_color
 
@@ -346,7 +386,7 @@ class ChunkReaderApp(App):
             if self.current_book and self.current_book["id"] == book_id:
                 self.current_book = None
                 self.current_units = []
-                self.current_chunks = []
+                self.current_blocks = []
             self.storage.remove_book(book_id)
             self.refresh_library()
 
@@ -479,77 +519,141 @@ class ChunkReaderApp(App):
 
         self.current_book = book
         self.current_units = units
-        self._rebuild_chunks(book.get("position", 0))
+        self.current_blocks = reader_engine.build_blocks(units)
+        self._layout_dirty = True
         self.sm.current = "reader"
         self.update_reader_view()
 
-    def _rebuild_chunks(self, position):
-        self.current_chunks = reader_engine.build_chunks(
-            self.current_units, self.sentences_per_chunk)
-        self.current_chunk_index = reader_engine.chunk_index_for_position(
-            self.current_chunks, position)
+    # -- page layout -----------------------------------------------------
+
+    def _reader_metrics(self):
+        """Text size, line width and box size for the current screen."""
+        area = self.sm.get_screen("reader").ids.reader_area
+        pad = dp(22) if self.game_mode else dp(6)
+        box_width = area.width * 0.94
+        size = sp(self.font_size_value)
+        floor = sp(MIN_FIT_FONT_SP)
+        while True:   # shrink only if N lines would not fit on the screen
+            probe = CoreLabel(
+                text="\n".join(["Ag"] * int(self.lines_per_page)),
+                font_name=self.font_name_value, font_size=size,
+                line_height=self.line_spacing_value)
+            probe.refresh()
+            text_height = probe.texture.height
+            if text_height + 2 * pad <= area.height * 0.96 or size <= floor:
+                break
+            size = max(floor, size * 0.93)
+        return {
+            "font_size": size, "pad": pad,
+            "text_width": box_width - 2 * pad,
+            "box_size": (box_width, text_height + 2 * pad),
+        }
+
+    def _measure_function(self, bold):
+        core = CoreLabel(font_name=self.font_name_value,
+                         font_size=self._metrics["font_size"], bold=bold)
+        return lambda text: core.get_extents(text)[0]
+
+    def _relayout(self):
+        """Lay the book out again for the current settings and screen size."""
+        self._metrics = self._reader_metrics()
+        self._measure = {False: self._measure_function(False),
+                         True: self._measure_function(True)}
+        self._page_cache = {}
+        unit = self.current_book.get("position", 0)
+        word = self.current_book.get("position_word", 0)
+        self.block_index = reader_engine.block_index_for_unit(self.current_blocks, unit)
+        self.page_index = reader_engine.page_index_for_word(
+            self._pages(self.block_index), unit, word)
+        self._layout_dirty = False
+
+    def _pages(self, block_index):
+        """The pages of one block (laid out the first time it is needed)."""
+        pages = self._page_cache.get(block_index)
+        if pages is None:
+            block = self.current_blocks[block_index]
+            pages = reader_engine.paginate_block(
+                self.current_units, block,
+                self._measure[block["type"] == "heading"],
+                self._metrics["text_width"], self.lines_per_page)
+            self._page_cache[block_index] = pages
+        return pages
+
+    def on_reader_resized(self, *_):
+        """The reading area changed size (first layout, or rotation)."""
+        self._layout_dirty = True
+        if self.sm is not None and self.sm.current == "reader":
+            self.update_reader_view()
 
     def update_reader_view(self):
-        if not self.current_book or not self.current_chunks:
+        if not self.current_book or not self.current_blocks:
             return
         ids = self.sm.get_screen("reader").ids
-        chunk = self.current_chunks[self.current_chunk_index]
-        label = ids.chunk_label
+        area, box, label = ids.reader_area, ids.rpg_box, ids.chunk_label
+        if area.width < dp(50) or area.height < dp(50):
+            return   # not laid out yet; on_reader_resized calls again
+        if self._layout_dirty:
+            self._relayout()
 
-        if chunk["type"] == "heading":
-            label.halign = "center"
-            label.text = "[b]" + escape_markup(chunk["text"]) + "[/b]"
+        page = self._pages(self.block_index)[self.page_index]
+        metrics = self._metrics
+        text = "\n".join(escape_markup(line) for line in page["lines"])
+        label.font_size = metrics["font_size"]
+        label.halign = "center" if page["heading"] else "left"
+        label.text = "[b]" + text + "[/b]" if page["heading"] else text
+        label.texture_update()
+        label.size = label.texture_size
+
+        # The box always has room for the full number of lines, so it does
+        # not jump around when a page has fewer lines.
+        box.size = metrics["box_size"]
+        box.center = area.center
+        if page["heading"]:
+            label.center = box.center
         else:
-            # Left-aligned with one sentence per paragraph: easier to track
-            # than centred or justified text.
-            label.halign = "left"
-            label.text = "\n\n".join(escape_markup(s) for s in chunk["sentences"])
-        self.fit_chunk_text()
+            label.x = box.x + metrics["pad"]
+            label.top = box.top - metrics["pad"]
 
-        last = len(self.current_chunks) - 1
-        fraction = self.current_chunk_index / last if last > 0 else 1.0
+        last_block = self.block_index == len(self.current_blocks) - 1
+        if last_block and self.page_index == len(self._pages(self.block_index)) - 1:
+            fraction = 1.0
+        else:
+            fraction = page["unit"] / max(1, len(self.current_units) - 1)
         ids.progress_bar.value = fraction
         ids.progress_label.text = f"{round(fraction * 100)}%"
         ids.book_title_label.text = self.current_book["title"]
 
-        self.storage.update_book(self.current_book["id"], position=chunk["start"])
-        self.current_book["position"] = chunk["start"]
+        if (self.current_book.get("position"), self.current_book.get("position_word")) \
+                != (page["unit"], page["word"]):
+            self.current_book["position"] = page["unit"]
+            self.current_book["position_word"] = page["word"]
+            self.storage.update_book(
+                self.current_book["id"],
+                position=page["unit"], position_word=page["word"])
 
-    def fit_chunk_text(self, *_):
-        """
-        Show the chunk at the chosen text size; if it does not fit on the
-        screen, shrink it just enough so that no text is ever cut off.
-        """
-        if self.sm is None:
+    def next_page(self):
+        if not self.current_blocks or self._layout_dirty:
             return
-        ids = self.sm.get_screen("reader").ids
-        label, area = ids.chunk_label, ids.reader_area
-        if area.width < dp(50) or area.height < dp(50):
-            return
-        if self.game_mode:   # the text sits inside the blue window
-            label.text_size = (area.width * 0.94 - dp(44), None)
-            available = area.height * 0.94 - dp(56)
+        if self.page_index < len(self._pages(self.block_index)) - 1:
+            self.page_index += 1
+        elif self.block_index < len(self.current_blocks) - 1:
+            self.block_index += 1
+            self.page_index = 0
         else:
-            label.text_size = (area.width * 0.9, None)
-            available = area.height * 0.94
-        size = sp(self.font_size_value)
-        floor = sp(MIN_FIT_FONT_SP)
-        while True:
-            label.font_size = size
-            label.texture_update()
-            if label.texture_size[1] <= available or size <= floor:
-                break
-            size = max(floor, size * 0.93)
+            return   # end of the book
+        self.update_reader_view()
 
-    def next_chunk(self):
-        if self.current_chunk_index < len(self.current_chunks) - 1:
-            self.current_chunk_index += 1
-            self.update_reader_view()
-
-    def prev_chunk(self):
-        if self.current_chunk_index > 0:
-            self.current_chunk_index -= 1
-            self.update_reader_view()
+    def prev_page(self):
+        if not self.current_blocks or self._layout_dirty:
+            return
+        if self.page_index > 0:
+            self.page_index -= 1
+        elif self.block_index > 0:
+            self.block_index -= 1
+            self.page_index = len(self._pages(self.block_index)) - 1
+        else:
+            return   # start of the book
+        self.update_reader_view()
 
     # ------------------------------------------------------------------
     # Navigation
@@ -564,7 +668,7 @@ class ChunkReaderApp(App):
         self.sm.current = "settings"
 
     def go_back_from_settings(self):
-        if self.settings_return_to == "reader" and self.current_chunks:
+        if self.settings_return_to == "reader" and self.current_blocks:
             self.sm.current = "reader"
             self.update_reader_view()
         else:
@@ -585,10 +689,10 @@ class ChunkReaderApp(App):
             return False   # on the library screen: leave the app
         if current == "reader":
             if key in (KEY_RIGHT, KEY_SPACE):
-                self.next_chunk()
+                self.next_page()
                 return True
             if key == KEY_LEFT:
-                self.prev_chunk()
+                self.prev_page()
                 return True
         return False
 
@@ -620,21 +724,23 @@ class ChunkReaderApp(App):
             button.selected = (button.theme_key == theme_key)
         self._save_settings_trigger()
 
+    # Each of these changes how the pages are laid out; the reader lays the
+    # book out again (keeping your place) the next time it is shown.
+
     def toggle_game_mode(self):
         self.game_mode = not self.game_mode
         self.settings_data["game_mode"] = self.game_mode
+        self._layout_dirty = True
         self._save_settings_trigger()
 
-    def set_sentences_per_chunk(self, value):
+    def set_lines_per_page(self, value):
         value = int(round(value))
-        if value not in CHUNK_SIZES or value == self.settings_data["sentences_per_chunk"]:
+        if value not in LINE_CHOICES or value == self.settings_data["lines_per_page"]:
             return
-        self.settings_data["sentences_per_chunk"] = value
-        self.sentences_per_chunk = value
+        self.settings_data["lines_per_page"] = value
+        self.lines_per_page = value
+        self._layout_dirty = True
         self._save_settings_trigger()
-        if self.current_book and self.current_units:
-            # Keep the reader at the same sentence in the book.
-            self._rebuild_chunks(self.current_book.get("position", 0))
 
     def set_font_size(self, value):
         value = int(round(value))
@@ -642,6 +748,7 @@ class ChunkReaderApp(App):
             return
         self.settings_data["font_size"] = value
         self.font_size_value = value
+        self._layout_dirty = True
         self._save_settings_trigger()
 
     def set_line_spacing(self, value):
@@ -650,6 +757,7 @@ class ChunkReaderApp(App):
             return
         self.settings_data["line_spacing"] = value
         self.line_spacing_value = value
+        self._layout_dirty = True
         self._save_settings_trigger()
 
 
